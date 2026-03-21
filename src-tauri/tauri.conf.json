@@ -1,18 +1,18 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "vite-tauri-node-rust-templete",
+  "productName": "Excalidraw Local",
   "version": "0.1.0",
-  "identifier": "com.vite-tauri-node-rust.template",
+  "identifier": "com.excalidraw.local",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev:frontend",
-    "beforeBuildCommand": "npm run build:release-assets"
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "windows": [
       {
-        "title": "vite-tauri-node-rust-templete",
+        "title": "Excalidraw Local",
         "width": 800,
         "height": 600,
         "resizable": true,
@@ -32,10 +32,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "externalBin": [
-      "bin/mongod",
-      "bin/backend"
     ]
   }
 }
