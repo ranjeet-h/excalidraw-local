@@ -6,6 +6,23 @@
     "main"
   ],
   "permissions": [
-    "core:default"
-  ]
+    "core:default",
+    "allow-reveal-in-folder",
+    "dialog:default",
+    "fs:default",
+    "fs:allow-appdata-read-recursive",
+    "fs:allow-appdata-write-recursive",
+    "fs:allow-appdata-meta-recursive",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        {
+          "path": "$APPDATA/**"
+      },
+      {
+        "path": "$APPDATA"
+      }
+    ]
+  }
+]
 }

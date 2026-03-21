@@ -129,3 +129,8 @@
     @apply font-sans;
     }
 }
+
+/* Remove Excalidraw's product social links from the embedded menu. */
+.excalidraw .dropdown-menu-group:has(a[href="https://github.com/excalidraw/excalidraw"]) {
+  display: none;
+}

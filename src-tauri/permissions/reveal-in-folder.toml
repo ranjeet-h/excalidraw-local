@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-reveal-in-folder"
+description = "Allows the reveal_in_folder command."
+commands.allow = ["reveal_in_folder"]
