@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['build', 'dist', 'src-tauri/target']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -19,7 +19,7 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
-    ignores: ['node_modules', 'dist'],
+    ignores: ['build', 'node_modules', 'dist', 'src-tauri/target'],
     rules: {
       "react-refresh/only-export-components": "off",
     }

@@ -15,8 +15,15 @@ npm run dev:frontend
 npm run dev:tauri
 npm run build
 npm run build:tauri
+npm run build:mac:universal
 npm run lint
 ```
+
+## macOS universal packaging
+
+- `npm run build:mac:universal` bumps the current app patch version, syncs `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`, then builds an unsigned universal macOS `.app` and `.dmg`.
+- Final artifacts are copied to `build/macos-universal/<version>/`, and older versioned outputs are pruned so only the latest build remains.
+- The script installs the `x86_64-apple-darwin` Rust target automatically if it is missing.
 
 ## Notes
 

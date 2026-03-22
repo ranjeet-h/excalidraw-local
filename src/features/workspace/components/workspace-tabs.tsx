@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { memo, useState } from "react"
 
 import { cva } from "class-variance-authority"
 import { FilePlus2Icon, PencilLineIcon, XIcon } from "lucide-react"
@@ -41,7 +41,7 @@ const workspaceTabItemVariants = cva(
 const workspaceTabActionClassName =
   "rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
 
-export function WorkspaceTabs({
+function WorkspaceTabsImpl({
   documents,
   activeDocumentId,
   onCreateDocument,
@@ -193,3 +193,35 @@ export function WorkspaceTabs({
     </div>
   )
 }
+
+function areWorkspaceTabsPropsEqual(
+  previousProps: WorkspaceTabsProps,
+  nextProps: WorkspaceTabsProps,
+) {
+  if (
+    previousProps.activeDocumentId !== nextProps.activeDocumentId ||
+    previousProps.onCreateDocument !== nextProps.onCreateDocument ||
+    previousProps.onActivateDocument !== nextProps.onActivateDocument ||
+    previousProps.onCloseDocument !== nextProps.onCloseDocument ||
+    previousProps.onRenameDocument !== nextProps.onRenameDocument ||
+    previousProps.documents.length !== nextProps.documents.length
+  ) {
+    return false
+  }
+
+  return previousProps.documents.every((document, index) => {
+    const nextDocument = nextProps.documents[index]
+
+    return (
+      document.id === nextDocument?.id &&
+      document.title === nextDocument.title &&
+      document.dirty === nextDocument.dirty &&
+      document.recovered === nextDocument.recovered
+    )
+  })
+}
+
+export const WorkspaceTabs = memo(
+  WorkspaceTabsImpl,
+  areWorkspaceTabsPropsEqual,
+)

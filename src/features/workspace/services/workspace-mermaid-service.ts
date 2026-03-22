@@ -1,6 +1,3 @@
-import { convertToExcalidrawElements } from "@excalidraw/excalidraw"
-import { parseMermaidToExcalidraw } from "@excalidraw/mermaid-to-excalidraw"
-
 import {
   createEmptySnapshot,
   createMermaidDiagramTitle,
@@ -41,6 +38,19 @@ function createMermaidImportError(error: unknown) {
   )
 }
 
+async function loadMermaidConverters() {
+  const [{ convertToExcalidrawElements }, { parseMermaidToExcalidraw }] =
+    await Promise.all([
+      import("@excalidraw/excalidraw"),
+      import("@excalidraw/mermaid-to-excalidraw"),
+    ])
+
+  return {
+    convertToExcalidrawElements,
+    parseMermaidToExcalidraw,
+  }
+}
+
 export async function createMermaidWorkspacePreview(
   definition: string,
 ): Promise<WorkspaceMermaidPreview> {
@@ -54,6 +64,8 @@ export async function createMermaidWorkspacePreview(
   }
 
   try {
+    const { convertToExcalidrawElements, parseMermaidToExcalidraw } =
+      await loadMermaidConverters()
     const parsedDiagram = await parseMermaidToExcalidraw(text)
     const elements = convertToExcalidrawElements(parsedDiagram.elements, {
       regenerateIds: true,

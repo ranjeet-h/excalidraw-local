@@ -2,12 +2,9 @@ import { confirm, message, open as openDialog, save as saveDialog } from "@tauri
 import {
   exists,
   readTextFile,
-  remove,
-  rename,
   stat,
   writeTextFile,
 } from "@tauri-apps/plugin-fs"
-import { restore, serializeAsJSON } from "@excalidraw/excalidraw"
 import type { ImportedDataState } from "@excalidraw/excalidraw/data/types"
 
 import type {
@@ -19,6 +16,15 @@ import {
   deriveDocumentTitleFromPath,
 } from "../model/workspace-path-utils"
 import { normalizeWorkspaceAppState } from "../model/workspace-model"
+
+async function loadWorkspaceDocumentCodecs() {
+  const { restore, serializeAsJSON } = await import("@excalidraw/excalidraw")
+
+  return {
+    restore,
+    serializeAsJSON,
+  }
+}
 
 function normalizeSelectedPaths(selection: string | string[] | null) {
   if (!selection) {
@@ -63,7 +69,7 @@ export async function promptForSaveLocation(document: WorkspaceDocument) {
     filters: [
       {
         name: "Excalidraw",
-        extensions: ["excalidraw", "json"],
+        extensions: ["excalidraw"],
       },
     ],
   })
@@ -90,6 +96,10 @@ export class WorkspaceFileConflictError extends Error {
   }
 }
 
+interface SaveWorkspaceDocumentOptions {
+  interactive?: boolean
+}
+
 export async function loadWorkspaceDocumentDraft(
   filePath: string,
 ): Promise<WorkspaceDocumentDraft> {
@@ -110,6 +120,7 @@ export async function loadWorkspaceDocumentDraft(
     throw new Error(`"${filePath}" is not a valid Excalidraw document.`)
   }
 
+  const { restore } = await loadWorkspaceDocumentCodecs()
   const restored = restore(parsed, null, null)
   const metadata = await stat(filePath)
 
@@ -131,29 +142,66 @@ export async function loadWorkspaceDocumentDraft(
   }
 }
 
-async function writeTextFileAtomic(filePath: string, contents: string) {
-  const tempPath = `${filePath}.tmp-${Date.now()}`
-  await writeTextFile(tempPath, contents)
+function normalizeWorkspaceSavePath(filePath: string) {
+  const trimmedPath = filePath.trim()
 
-  try {
-    await rename(tempPath, filePath)
-  } catch (error) {
-    await remove(tempPath).catch(() => undefined)
-    throw error
+  if (!trimmedPath) {
+    return trimmedPath
   }
+
+  return `${trimmedPath.replace(/\.[^./\\]+$/u, "")}.excalidraw`
 }
 
 async function promptBeforeOverwritingChangedFile(
   document: WorkspaceDocument,
   filePath: string,
+  options: SaveWorkspaceDocumentOptions = {},
 ) {
-  if (document.filePath !== filePath || !document.lastSavedAt) {
+  const { interactive = true } = options
+
+  if (document.filePath !== filePath) {
+    const fileExists = await exists(filePath)
+
+    if (!fileExists) {
+      return
+    }
+
+    if (!interactive) {
+      throw new WorkspaceFileConflictError(
+        `Skipped saving "${document.title}" because the destination file already exists.`,
+      )
+    }
+
+    const confirmed = await confirm(
+      `"${deriveDocumentTitleFromPath(filePath)}" already exists. Replace it with "${document.title}"?`,
+      {
+        title: "Excalidraw Local",
+        kind: "warning",
+      },
+    )
+
+    if (!confirmed) {
+      throw new WorkspaceFileConflictError(
+        `Skipped saving "${document.title}" because the destination file already exists.`,
+      )
+    }
+
+    return
+  }
+
+  if (!document.lastSavedAt) {
     return
   }
 
   const fileExists = await exists(filePath)
 
   if (!fileExists) {
+    if (!interactive) {
+      throw new WorkspaceFileConflictError(
+        `Skipped saving "${document.title}" because the file was removed on disk.`,
+      )
+    }
+
     const confirmed = await confirm(
       `"${document.title}" no longer exists on disk. Recreate it here?`,
       {
@@ -178,6 +226,12 @@ async function promptBeforeOverwritingChangedFile(
     return
   }
 
+  if (!interactive) {
+    throw new WorkspaceFileConflictError(
+      `Skipped saving "${document.title}" because the file changed on disk.`,
+    )
+  }
+
   const confirmed = await confirm(
     `"${document.title}" changed on disk after it was opened or saved. Overwrite those changes?`,
     {
@@ -196,9 +250,20 @@ async function promptBeforeOverwritingChangedFile(
 export async function saveWorkspaceDocumentToPath(
   document: WorkspaceDocument,
   filePath: string,
+  options: SaveWorkspaceDocumentOptions = {},
 ) {
-  await promptBeforeOverwritingChangedFile(document, filePath)
+  const normalizedTargetPath =
+    document.filePath === filePath
+      ? filePath
+      : normalizeWorkspaceSavePath(filePath)
 
+  await promptBeforeOverwritingChangedFile(
+    document,
+    normalizedTargetPath,
+    options,
+  )
+
+  const { serializeAsJSON } = await loadWorkspaceDocumentCodecs()
   const serialized = serializeAsJSON(
     document.snapshot.elements,
     document.snapshot.appState,
@@ -206,15 +271,15 @@ export async function saveWorkspaceDocumentToPath(
     "local",
   )
 
-  await writeTextFileAtomic(filePath, serialized)
-  const metadata = await stat(filePath)
-  const isSavingToExistingPath = document.filePath === filePath
+  await writeTextFile(normalizedTargetPath, serialized)
+  const metadata = await stat(normalizedTargetPath)
+  const isSavingToExistingPath = document.filePath === normalizedTargetPath
 
   return {
     title: isSavingToExistingPath
       ? document.title
-      : deriveDocumentTitleFromPath(filePath),
-    filePath,
+      : deriveDocumentTitleFromPath(normalizedTargetPath),
+    filePath: normalizedTargetPath,
     dirty: false,
     lastSavedAt: metadata.mtime ? metadata.mtime.toISOString() : new Date().toISOString(),
   }

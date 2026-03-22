@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+build/macos-universal/*/Excalidraw Local.app/Contents/Info.plist
+build/macos-universal/*/Excalidraw Local.app/Contents/MacOS/app
+build/macos-universal/*/Excalidraw Local.app/Contents/Resources/icon.icns

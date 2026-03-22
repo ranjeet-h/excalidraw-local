@@ -1,3 +1,5 @@
+import { Suspense, lazy, memo } from "react"
+
 import {
   CopyIcon,
   FilePlus2Icon,
@@ -42,7 +44,6 @@ import {
 } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
 
-import { WorkspaceEditor } from "./workspace-editor"
 import { WorkspaceMermaidDialog } from "./workspace-mermaid-dialog"
 import { WorkspaceSidebarSheet } from "./workspace-sidebar-sheet"
 import { WorkspaceTabs } from "./workspace-tabs"
@@ -53,6 +54,30 @@ import type {
   WorkspaceState,
 } from "../model/workspace-model"
 import type { WorkspaceMermaidPreview } from "../services/workspace-mermaid-service"
+
+let workspaceEditorModulePromise: Promise<
+  typeof import("./workspace-editor")
+> | null = null
+
+function loadWorkspaceEditor() {
+  if (!workspaceEditorModulePromise) {
+    workspaceEditorModulePromise = import("./workspace-editor")
+  }
+
+  return workspaceEditorModulePromise
+}
+
+export function preloadWorkspaceEditor() {
+  void loadWorkspaceEditor()
+}
+
+const WorkspaceEditor = lazy(async () => {
+  const module = await loadWorkspaceEditor()
+
+  return {
+    default: module.WorkspaceEditor,
+  }
+})
 
 export interface WorkspaceShellViewProps {
   workspace: WorkspaceState
@@ -97,22 +122,7 @@ export interface WorkspaceShellViewProps {
   onCopyMermaidErrorDetails: () => void
 }
 
-function WorkspaceQuickMenu({
-  activeDocument,
-  tabCount,
-  sidebarOpen,
-  onSidebarOpenChange,
-  onCreateDocument,
-  onDuplicateDocument,
-  onOpenFiles,
-  onSaveActiveDocument,
-  onSaveActiveDocumentAs,
-  onRevealActiveDocumentInFolder,
-  onExportDocument,
-  onSwitchDocument,
-  onOpenMermaidImport,
-  onOpenRenameDialog,
-}: {
+interface WorkspaceQuickMenuProps {
   activeDocument: WorkspaceDocument | null
   tabCount: number
   sidebarOpen: boolean
@@ -127,7 +137,24 @@ function WorkspaceQuickMenu({
   onSwitchDocument: (direction: 1 | -1) => void
   onOpenMermaidImport: () => void
   onOpenRenameDialog: () => void
-}) {
+}
+
+const WorkspaceQuickMenu = memo(function WorkspaceQuickMenu({
+  activeDocument,
+  tabCount,
+  sidebarOpen,
+  onSidebarOpenChange,
+  onCreateDocument,
+  onDuplicateDocument,
+  onOpenFiles,
+  onSaveActiveDocument,
+  onSaveActiveDocumentAs,
+  onRevealActiveDocumentInFolder,
+  onExportDocument,
+  onSwitchDocument,
+  onOpenMermaidImport,
+  onOpenRenameDialog,
+}: WorkspaceQuickMenuProps) {
   return (
     <div className="pointer-events-none absolute top-3 right-3 z-30">
       <DropdownMenu>
@@ -237,7 +264,30 @@ function WorkspaceQuickMenu({
       </DropdownMenu>
     </div>
   )
-}
+},
+function areWorkspaceQuickMenuPropsEqual(
+  previousProps: WorkspaceQuickMenuProps,
+  nextProps: WorkspaceQuickMenuProps,
+) {
+  return (
+    previousProps.tabCount === nextProps.tabCount &&
+    previousProps.sidebarOpen === nextProps.sidebarOpen &&
+    previousProps.onSidebarOpenChange === nextProps.onSidebarOpenChange &&
+    previousProps.onCreateDocument === nextProps.onCreateDocument &&
+    previousProps.onDuplicateDocument === nextProps.onDuplicateDocument &&
+    previousProps.onOpenFiles === nextProps.onOpenFiles &&
+    previousProps.onSaveActiveDocument === nextProps.onSaveActiveDocument &&
+    previousProps.onSaveActiveDocumentAs === nextProps.onSaveActiveDocumentAs &&
+    previousProps.onRevealActiveDocumentInFolder ===
+      nextProps.onRevealActiveDocumentInFolder &&
+    previousProps.onExportDocument === nextProps.onExportDocument &&
+    previousProps.onSwitchDocument === nextProps.onSwitchDocument &&
+    previousProps.onOpenMermaidImport === nextProps.onOpenMermaidImport &&
+    previousProps.onOpenRenameDialog === nextProps.onOpenRenameDialog &&
+    previousProps.activeDocument?.id === nextProps.activeDocument?.id &&
+    previousProps.activeDocument?.filePath === nextProps.activeDocument?.filePath
+  )
+})
 
 function WorkspaceEmptyState({
   recentFiles,
@@ -388,12 +438,20 @@ export function WorkspaceShellView({
     <div className="relative isolate h-screen overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.08),_transparent_30%),linear-gradient(to_bottom,_rgba(255,255,255,0.98),_rgba(248,250,252,0.94))] text-foreground">
       <main className="absolute inset-0 p-3">
         {activeDocument ? (
-          <WorkspaceEditor
-            key={activeDocument.id}
-            document={activeDocument}
-            className="h-full w-full pt-[4.75rem]"
-            onChange={onUpdateDocumentSnapshot}
-          />
+          <Suspense
+            fallback={
+              <div className="flex h-full w-full items-center justify-center rounded-[2rem] border border-border/70 bg-background/80 pt-[4.75rem] text-sm text-muted-foreground shadow-sm">
+                Loading canvas…
+              </div>
+            }
+          >
+            <WorkspaceEditor
+              key={activeDocument.id}
+              document={activeDocument}
+              className="h-full w-full pt-[4.75rem]"
+              onChange={onUpdateDocumentSnapshot}
+            />
+          </Suspense>
         ) : (
           <WorkspaceEmptyState
             recentFiles={workspace.recentFiles}

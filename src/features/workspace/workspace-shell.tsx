@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { toast } from "sonner"
 
 import {
   createMermaidDiagramTitle,
@@ -40,13 +41,19 @@ import { useWorkspaceFileDrop } from "./hooks/use-workspace-file-drop"
 import { useWorkspaceOpenFileEvents } from "./hooks/use-workspace-open-file-events"
 import { useWorkspaceSessionPersistence } from "./hooks/use-workspace-session-persistence"
 import { useWorkspaceKeyboardShortcuts } from "./hooks/use-workspace-keyboard-shortcuts"
-import { WorkspaceShellView } from "./components/workspace-shell-view"
+import {
+  WorkspaceShellView,
+  preloadWorkspaceEditor,
+} from "./components/workspace-shell-view"
+import {
+  buildDefaultSavePath,
+  deriveDocumentTitleFromPath,
+} from "./model/workspace-path-utils"
 
 export function WorkspaceShell() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(() =>
     createWorkspaceState(),
   )
-  const [flashMessage, setFlashMessage] = useState("")
   const [fileDropActive, setFileDropActive] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
@@ -59,6 +66,10 @@ export function WorkspaceShell() {
   const [mermaidImporting, setMermaidImporting] = useState(false)
   const [mermaidImportError, setMermaidImportError] =
     useState<WorkspaceMermaidImportError | null>(null)
+  const workspaceRef = useRef<WorkspaceState>(workspace)
+  const inFlightSaveTasksRef = useRef(
+    new Map<string, Promise<Awaited<ReturnType<typeof saveWorkspaceDocumentToPath>> | null>>(),
+  )
 
   const resolveMermaidImportError = useCallback((error: unknown) => {
     if (error instanceof WorkspaceMermaidImportError) {
@@ -82,24 +93,26 @@ export function WorkspaceShell() {
       ) ?? null
     )
   }, [workspace.activeDocumentId, workspace.documents])
+  const activeDocumentRef = useRef<WorkspaceDocument | null>(activeDocument)
+
+  useEffect(() => {
+    workspaceRef.current = workspace
+    activeDocumentRef.current = activeDocument
+  }, [activeDocument, workspace])
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      preloadWorkspaceEditor()
+    }, 180)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [])
 
   useEffect(() => {
     document.title = activeDocument
       ? `${activeDocument.title} — Excalidraw Local`
       : "Excalidraw Local"
   }, [activeDocument])
-
-  useEffect(() => {
-    if (!flashMessage) {
-      return
-    }
-
-    const timeout = window.setTimeout(() => {
-      setFlashMessage("")
-    }, 2400)
-
-    return () => window.clearTimeout(timeout)
-  }, [flashMessage])
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -116,7 +129,10 @@ export function WorkspaceShell() {
   }, [workspace.documents])
 
   const showMessage = useCallback((message: string) => {
-    setFlashMessage(message)
+    toast(message, {
+      id: "workspace-feedback",
+      duration: 2200,
+    })
   }, [])
 
   const isHydrated = useWorkspaceSessionPersistence({
@@ -207,7 +223,9 @@ export function WorkspaceShell() {
   }, [showMessage])
 
   const duplicateDocument = useCallback(() => {
-    if (!activeDocument) {
+    const currentActiveDocument = activeDocumentRef.current
+
+    if (!currentActiveDocument) {
       showMessage("Open a drawing before duplicating it")
       return
     }
@@ -230,18 +248,20 @@ export function WorkspaceShell() {
       }
     })
 
-    showMessage(`Duplicated ${activeDocument.title}`)
-  }, [activeDocument, showMessage])
+    showMessage(`Duplicated ${currentActiveDocument.title}`)
+  }, [showMessage])
 
   const openRenameDialog = useCallback(() => {
-    if (!activeDocument) {
+    const currentActiveDocument = activeDocumentRef.current
+
+    if (!currentActiveDocument) {
       showMessage("Open a tab before renaming it")
       return
     }
 
-    setRenameDraft(activeDocument.title)
+    setRenameDraft(currentActiveDocument.title)
     setRenameDialogOpen(true)
-  }, [activeDocument, showMessage])
+  }, [showMessage])
 
   const openMermaidImportDialog = useCallback(() => {
     if (!mermaidDraft.trim()) {
@@ -279,8 +299,9 @@ export function WorkspaceShell() {
         return
       }
 
+      const currentWorkspace = workspaceRef.current
       const existingDocuments = new Map(
-        workspace.documents
+        currentWorkspace.documents
           .filter((document) => document.filePath)
           .map((document) => [document.filePath!, document] as const),
       )
@@ -375,7 +396,7 @@ export function WorkspaceShell() {
           : `${uniquePaths.length} files opened`,
       )
     },
-    [showMessage, workspace.documents],
+    [showMessage],
   )
 
   const handleOpenFiles = useCallback(async () => {
@@ -396,49 +417,105 @@ export function WorkspaceShell() {
   )
 
   const persistDocumentToPath = useCallback(
-    async (document: WorkspaceDocument, targetPath: string) => {
-      try {
-        const savedDocument = await saveWorkspaceDocumentToPath(document, targetPath)
+    async (
+      documentId: string,
+      targetPath: string,
+      options: {
+        interactive?: boolean
+        showConflictMessage?: boolean
+      } = {},
+    ) => {
+      const { interactive = true, showConflictMessage = true } = options
+      const existingSaveTask = inFlightSaveTasksRef.current.get(documentId)
 
-        setWorkspace((current) => {
-          const documents = current.documents.map((currentDocument) =>
-            currentDocument.id === document.id
-              ? {
-                  ...currentDocument,
-                  ...savedDocument,
-                  filePath: targetPath,
-                  recovered: false,
-                }
-              : currentDocument,
-          )
-
-          return {
-            ...current,
-            documents,
-            nextUntitledIndex: deriveNextUntitledIndex(documents),
-            recentFiles: upsertRecentFile(current.recentFiles, {
-              filePath: targetPath,
-              title: savedDocument.title,
-              lastTouchedAt:
-                savedDocument.lastSavedAt ?? new Date().toISOString(),
-            }),
-          }
-        })
-
-        return savedDocument
-      } catch (error) {
-        if (error instanceof WorkspaceFileConflictError) {
-          showMessage(error.message)
+      if (existingSaveTask) {
+        if (!interactive) {
           return null
         }
 
-        await showFileError(
-          `Could not save "${document.title}": ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+        await existingSaveTask
+        return persistDocumentToPath(documentId, targetPath, options)
+      }
+
+      const saveTask = (async () => {
+        const currentDocument = workspaceRef.current.documents.find(
+          (workspaceDocument) => workspaceDocument.id === documentId,
         )
 
-        return null
+        if (!currentDocument) {
+          return null
+        }
+
+        try {
+          const savedDocument = await saveWorkspaceDocumentToPath(
+            currentDocument,
+            targetPath,
+            { interactive },
+          )
+
+          setWorkspace((current) => {
+            const previousDocument = current.documents.find(
+              (workspaceDocument) => workspaceDocument.id === documentId,
+            )
+            const savedFilePath = savedDocument.filePath
+            const recentFiles =
+              previousDocument?.filePath &&
+              previousDocument.filePath !== savedFilePath
+                ? current.recentFiles.filter(
+                    (recentFile) => recentFile.filePath !== previousDocument.filePath,
+                  )
+                : current.recentFiles
+            const documents = current.documents.map((workspaceDocument) =>
+              workspaceDocument.id === documentId
+                ? {
+                    ...workspaceDocument,
+                    ...savedDocument,
+                    filePath: savedFilePath,
+                    recovered: false,
+                  }
+                : workspaceDocument,
+            )
+
+            return {
+              ...current,
+              documents,
+              nextUntitledIndex: deriveNextUntitledIndex(documents),
+              recentFiles: upsertRecentFile(recentFiles, {
+                filePath: savedFilePath,
+                title: savedDocument.title,
+                lastTouchedAt:
+                  savedDocument.lastSavedAt ?? new Date().toISOString(),
+              }),
+            }
+          })
+
+          return savedDocument
+        } catch (error) {
+          if (error instanceof WorkspaceFileConflictError) {
+            if (showConflictMessage) {
+              showMessage(error.message)
+            }
+            return null
+          }
+
+          await showFileError(
+            `Could not save "${
+              currentDocument.title
+            }": ${error instanceof Error ? error.message : String(error)}`,
+          )
+
+          return null
+        }
+      })()
+
+      inFlightSaveTasksRef.current.set(documentId, saveTask)
+
+      try {
+        return await saveTask
+      } finally {
+        if (inFlightSaveTasksRef.current.get(documentId) === saveTask) {
+          inFlightSaveTasksRef.current.delete(documentId)
+        }
       }
     },
     [showMessage],
@@ -446,7 +523,10 @@ export function WorkspaceShell() {
 
   const saveDocumentToPath = useCallback(
     async (document: WorkspaceDocument, targetPath: string) => {
-      const savedDocument = await persistDocumentToPath(document, targetPath)
+      const savedDocument = await persistDocumentToPath(document.id, targetPath, {
+        interactive: true,
+        showConflictMessage: true,
+      })
 
       if (savedDocument) {
         showMessage(`Saved ${savedDocument.title}`)
@@ -458,55 +538,84 @@ export function WorkspaceShell() {
   )
 
   const autosaveDocument = useCallback(
-    async (document: WorkspaceDocument) => {
-      if (!document.filePath) {
+    async (documentId: string) => {
+      const currentDocument = workspaceRef.current.documents.find(
+        (workspaceDocument) => workspaceDocument.id === documentId,
+      )
+
+      if (!currentDocument?.filePath || !currentDocument.dirty) {
         return null
       }
 
-      return persistDocumentToPath(document, document.filePath)
+      return persistDocumentToPath(documentId, currentDocument.filePath, {
+        interactive: false,
+        showConflictMessage: false,
+      })
     },
     [persistDocumentToPath],
   )
 
   const handleSaveActiveDocumentAs = useCallback(async () => {
-    if (!activeDocument) {
+    const currentActiveDocument = activeDocumentRef.current
+
+    if (!currentActiveDocument) {
       showMessage("Open a tab before using Save As")
       return
     }
 
-    const targetPath = await promptForSaveLocation(activeDocument)
+    const targetPath = await promptForSaveLocation(currentActiveDocument)
 
     if (!targetPath) {
       showMessage("Save As cancelled")
       return
     }
 
-    await saveDocumentToPath(activeDocument, targetPath)
-  }, [activeDocument, saveDocumentToPath, showMessage])
+    await saveDocumentToPath(currentActiveDocument, targetPath)
+  }, [saveDocumentToPath, showMessage])
 
   const handleSaveActiveDocument = useCallback(async () => {
-    if (!activeDocument) {
+    const currentActiveDocument = activeDocumentRef.current
+
+    if (!currentActiveDocument) {
       showMessage("Open a tab before saving")
       return
     }
 
-    if (!activeDocument.filePath) {
+    if (!currentActiveDocument.filePath) {
       await handleSaveActiveDocumentAs()
       return
     }
 
-    await saveDocumentToPath(activeDocument, activeDocument.filePath)
-  }, [activeDocument, handleSaveActiveDocumentAs, saveDocumentToPath, showMessage])
+    const currentFileTitle = deriveDocumentTitleFromPath(
+      currentActiveDocument.filePath,
+    )
+    const nextSavePath =
+      currentActiveDocument.title.trim() &&
+      currentActiveDocument.title.trim() !== currentFileTitle
+        ? await buildDefaultSavePath(currentActiveDocument)
+        : currentActiveDocument.filePath
+
+    await saveDocumentToPath(
+      currentActiveDocument,
+      nextSavePath,
+    )
+  }, [
+    handleSaveActiveDocumentAs,
+    saveDocumentToPath,
+    showMessage,
+  ])
 
   const exportDocument = useCallback(
     async (format: WorkspaceExportFormat) => {
-      if (!activeDocument) {
+      const currentActiveDocument = activeDocumentRef.current
+
+      if (!currentActiveDocument) {
         showMessage("Open a tab before exporting")
         return
       }
 
       const targetPath = await promptForWorkspaceExportLocation(
-        activeDocument,
+        currentActiveDocument,
         format,
       )
 
@@ -516,17 +625,21 @@ export function WorkspaceShell() {
       }
 
       try {
-        await exportWorkspaceDocumentToPath(activeDocument, format, targetPath)
+        await exportWorkspaceDocumentToPath(
+          currentActiveDocument,
+          format,
+          targetPath,
+        )
         showMessage(`Exported ${formatWorkspaceExportFormat(format)}`)
       } catch (error) {
         await showFileError(
-          `Could not export "${activeDocument.title}": ${
+          `Could not export "${currentActiveDocument.title}": ${
             error instanceof Error ? error.message : String(error)
           }`,
         )
       }
     },
-    [activeDocument, showMessage],
+    [showMessage],
   )
 
   const handleExportActiveDocument = useCallback(() => {
@@ -534,62 +647,68 @@ export function WorkspaceShell() {
   }, [exportDocument])
 
   const handleRevealActiveDocumentInFolder = useCallback(async () => {
-    if (!activeDocument) {
+    const currentActiveDocument = activeDocumentRef.current
+
+    if (!currentActiveDocument) {
       showMessage("Open a tab before revealing it in a folder")
       return
     }
 
-    if (!activeDocument.filePath) {
+    if (!currentActiveDocument.filePath) {
       showMessage("Save the active document before revealing it in a folder")
       return
     }
 
     try {
-      await revealWorkspaceFileInFolder(activeDocument.filePath)
-      showMessage(`Revealed ${activeDocument.title}`)
+      await revealWorkspaceFileInFolder(currentActiveDocument.filePath)
+      showMessage(`Revealed ${currentActiveDocument.title}`)
     } catch (error) {
       await showFileError(
-        `Could not reveal "${activeDocument.title}" in its folder: ${
+        `Could not reveal "${currentActiveDocument.title}" in its folder: ${
           error instanceof Error ? error.message : String(error)
         }`,
       )
     }
-  }, [activeDocument, showMessage])
+  }, [showMessage])
 
   const updateDocumentSnapshot = useCallback(
     (documentId: string, snapshot: WorkspaceSnapshot) => {
-      setWorkspace((current) => ({
-        ...current,
-        documents: current.documents.map((document) =>
-          document.id === documentId
-            ? {
-                ...document,
-                snapshot,
-                dirty: true,
-              }
-            : document,
-        ),
-      }))
+      startTransition(() => {
+        setWorkspace((current) => ({
+          ...current,
+          documents: current.documents.map((document) =>
+            document.id === documentId
+              ? {
+                  ...document,
+                  snapshot,
+                  dirty: true,
+                }
+              : document,
+          ),
+        }))
+      })
     },
     [],
   )
 
   const confirmRenameActiveDocument = useCallback(() => {
-    if (!activeDocument) {
+    const currentActiveDocument = activeDocumentRef.current
+
+    if (!currentActiveDocument) {
       setRenameDialogOpen(false)
       return
     }
 
-    const renamed = renameDocument(activeDocument.id, renameDraft)
+    const renamed = renameDocument(currentActiveDocument.id, renameDraft)
 
     if (renamed) {
       setRenameDialogOpen(false)
     }
-  }, [activeDocument, renameDocument, renameDraft])
+  }, [renameDocument, renameDraft])
 
   const closeDocument = useCallback(
     async (documentId: string) => {
-      const targetDocument = workspace.documents.find(
+      const targetDocument = workspaceRef.current.documents.find(
         (document) => document.id === documentId,
       )
 
@@ -636,7 +755,7 @@ export function WorkspaceShell() {
 
       showMessage(`Closed ${targetDocument.title}`)
     },
-    [showMessage, workspace.documents],
+    [showMessage],
   )
 
   const switchDocument = useCallback((direction: 1 | -1) => {
@@ -758,6 +877,7 @@ export function WorkspaceShell() {
   useWorkspaceKeyboardShortcuts({
     activeDocument,
     createDocument,
+    duplicateDocument,
     closeDocument,
     switchDocument,
     handleOpenFiles,
@@ -771,7 +891,6 @@ export function WorkspaceShell() {
     documents: workspace.documents,
     isEnabled: isHydrated,
     saveDocument: autosaveDocument,
-    showMessage,
   })
 
   useWorkspaceFileDrop({

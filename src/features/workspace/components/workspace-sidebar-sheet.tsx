@@ -1,3 +1,5 @@
+import { memo } from "react"
+
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -99,7 +101,7 @@ export interface WorkspaceSidebarSheetProps {
   onRevealActiveDocumentInFolder: () => Promise<void>
 }
 
-export function WorkspaceSidebarSheet({
+function WorkspaceSidebarSheetImpl({
   open,
   onOpenChange,
   workspace,
@@ -299,3 +301,59 @@ export function WorkspaceSidebarSheet({
     </Sheet>
   )
 }
+
+function areWorkspaceSidebarSheetPropsEqual(
+  previousProps: WorkspaceSidebarSheetProps,
+  nextProps: WorkspaceSidebarSheetProps,
+) {
+  if (
+    previousProps.open !== nextProps.open ||
+    previousProps.onOpenChange !== nextProps.onOpenChange ||
+    previousProps.onActivateDocument !== nextProps.onActivateDocument ||
+    previousProps.onCloseDocument !== nextProps.onCloseDocument ||
+    previousProps.onOpenRecentFile !== nextProps.onOpenRecentFile ||
+    previousProps.onRevealActiveDocumentInFolder !==
+      nextProps.onRevealActiveDocumentInFolder ||
+    previousProps.activeDocument?.id !== nextProps.activeDocument?.id ||
+    previousProps.activeDocument?.title !== nextProps.activeDocument?.title ||
+    previousProps.activeDocument?.filePath !== nextProps.activeDocument?.filePath ||
+    previousProps.workspace.documents.length !== nextProps.workspace.documents.length ||
+    previousProps.workspace.recentFiles.length !==
+      nextProps.workspace.recentFiles.length
+  ) {
+    return false
+  }
+
+  const documentsMatch = previousProps.workspace.documents.every(
+    (document, index) => {
+      const nextDocument = nextProps.workspace.documents[index]
+
+      return (
+        document.id === nextDocument?.id &&
+        document.title === nextDocument.title &&
+        document.dirty === nextDocument.dirty &&
+        document.recovered === nextDocument.recovered &&
+        document.filePath === nextDocument.filePath
+      )
+    },
+  )
+
+  if (!documentsMatch) {
+    return false
+  }
+
+  return previousProps.workspace.recentFiles.every((recentFile, index) => {
+    const nextRecentFile = nextProps.workspace.recentFiles[index]
+
+    return (
+      recentFile.filePath === nextRecentFile?.filePath &&
+      recentFile.title === nextRecentFile.title &&
+      recentFile.lastTouchedAt === nextRecentFile.lastTouchedAt
+    )
+  })
+}
+
+export const WorkspaceSidebarSheet = memo(
+  WorkspaceSidebarSheetImpl,
+  areWorkspaceSidebarSheetPropsEqual,
+)

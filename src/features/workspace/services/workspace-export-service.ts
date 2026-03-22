@@ -1,5 +1,4 @@
 import { save as saveDialog } from "@tauri-apps/plugin-dialog"
-import { exportToBlob, exportToSvg, serializeAsJSON } from "@excalidraw/excalidraw"
 import { writeFile, writeTextFile } from "@tauri-apps/plugin-fs"
 
 import {
@@ -10,6 +9,18 @@ import type {
   WorkspaceExportFormat,
 } from "../model/workspace-model"
 import { formatWorkspaceExportFormat } from "../model/workspace-model"
+
+async function loadWorkspaceExporters() {
+  const { exportToBlob, exportToSvg, serializeAsJSON } = await import(
+    "@excalidraw/excalidraw"
+  )
+
+  return {
+    exportToBlob,
+    exportToSvg,
+    serializeAsJSON,
+  }
+}
 
 function getExportAppState(document: WorkspaceDocument) {
   const viewBackgroundColor =
@@ -54,6 +65,7 @@ export async function exportWorkspaceDocumentToPath(
 ) {
   switch (format) {
     case "png": {
+      const { exportToBlob } = await loadWorkspaceExporters()
       const blob = await exportToBlob({
         elements: document.snapshot.elements,
         appState: getExportAppState(document),
@@ -66,6 +78,7 @@ export async function exportWorkspaceDocumentToPath(
       return
     }
     case "svg": {
+      const { exportToSvg } = await loadWorkspaceExporters()
       const svgElement = await exportToSvg({
         elements: document.snapshot.elements,
         appState: getExportAppState(document),
@@ -81,6 +94,7 @@ export async function exportWorkspaceDocumentToPath(
       return
     }
     case "json": {
+      const { serializeAsJSON } = await loadWorkspaceExporters()
       const serialized = serializeAsJSON(
         document.snapshot.elements,
         document.snapshot.appState,
