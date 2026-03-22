@@ -1,31 +1,141 @@
-# Excalidraw Local
+<p align="center">
+  <img src="./public/logo.png" alt="Excalidraw Local logo" width="140" />
+</p>
 
-Local-first desktop workspace for Excalidraw built with Tauri, React, and Rust.
+<h1 align="center">Excalidraw Local</h1>
 
-## What this repo is now
+<p align="center">
+  A local-first desktop workspace for Excalidraw with tabs, autosave, session recovery, and native macOS builds.
+</p>
 
-- A local-first desktop shell for Excalidraw with an embedded canvas, tabbed document state, and native app chrome.
-- A single-window workspace designed for local files, recovery, and future file-system integration.
-- A frontend-first UI layer with Tauri handling native file and window integration as it lands.
+<p align="center">
+  <a href="./build/macos-universal/0.1.6/Excalidraw%20Local_0.1.6_universal.dmg">
+    <img src="https://img.shields.io/badge/Download-macOS%20DMG-111827?style=for-the-badge&logo=apple&logoColor=white" alt="Download macOS DMG" />
+  </a>
+  <a href="./build/macos-universal/0.1.6/">
+    <img src="https://img.shields.io/badge/Browse-build%20folder-0ea5e9?style=for-the-badge&logo=github&logoColor=white" alt="Browse build folder" />
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/version-0.1.6-6d28d9?style=flat-square" alt="Version 0.1.6" />
+  <img src="https://img.shields.io/badge/desktop-Tauri%20%2B%20Rust-24c8db?style=flat-square" alt="Tauri and Rust" />
+  <img src="https://img.shields.io/badge/frontend-React%20%2B%20TypeScript-61dafb?style=flat-square" alt="React and TypeScript" />
+</p>
+
+> Excalidraw Local keeps your diagrams on your machine and wraps the official Excalidraw canvas in a native desktop shell.
+
+## Table of contents
+
+- [Why Excalidraw Local](#why-excalidraw-local)
+- [At a glance](#at-a-glance)
+- [Highlights](#highlights)
+- [Downloads](#downloads)
+- [Getting started](#getting-started)
+- [Development](#development)
+- [Build a macOS release](#build-a-macos-release)
+- [Technology stack](#technology-stack)
+- [Project layout](#project-layout)
+- [Roadmap](#roadmap)
+- [Notes](#notes)
+
+## Why Excalidraw Local
+
+Excalidraw Local turns the browser-first Excalidraw experience into a desktop workspace built for local files, repeat usage, and offline work. It is aimed at people who want the canvas they already know, but with a more focused app shell, native file dialogs, and build artifacts they can install directly.
+
+## At a glance
+
+| Item | Details |
+| --- | --- |
+| Product | Local-first Excalidraw desktop workspace |
+| Current version | `0.1.6` |
+| Desktop runtime | Tauri 2 + Rust |
+| Frontend | React 19 + TypeScript |
+| Build output | `build/macos-universal/0.1.6/` |
+
+## Highlights
+
+- Full Excalidraw canvas embedded in a native desktop shell.
+- Tabbed document workflow for switching between multiple local diagrams.
+- Local file open and save flow with native dialogs.
+- Autosave for documents that already have a file path.
+- Session persistence so recently opened files can come back on restart.
+- Drag and drop support for opening local `.excalidraw` files.
+- Export support for PNG, SVG, and `.excalidraw` scene files.
+- Mermaid-to-Excalidraw import for turning text diagrams into editable scenes.
+- Keyboard shortcuts and native app chrome designed for desktop workflows.
+- Compact, canvas-first layout that keeps the workspace uncluttered.
+
+## Downloads
+
+Current macOS build artifacts are stored in `build/macos-universal/0.1.6/`.
+
+| Artifact | What it is | Link |
+| --- | --- | --- |
+| `Excalidraw Local_0.1.6_universal.dmg` | Universal macOS installer for Apple Silicon and Intel Macs | [Download DMG](./build/macos-universal/0.1.6/Excalidraw%20Local_0.1.6_universal.dmg) |
+| `Excalidraw Local.app` | macOS app bundle inside the build folder | [Browse build folder](./build/macos-universal/0.1.6/) |
+
+> Note: the macOS build is unsigned and is intended for local testing or direct distribution from this repository.
+
+## Getting started
+
+1. Clone the repository.
+2. Install dependencies with `npm install`.
+3. Start the frontend with `npm run dev` or the desktop app with `npm run dev:tauri`.
+
+```bash
+git clone <repo-url>
+cd excalidraw-local
+npm install
+npm run dev
+# or
+npm run dev:tauri
+```
 
 ## Development
 
 ```bash
-npm run dev:frontend
-npm run dev:tauri
 npm run build
 npm run build:tauri
 npm run build:mac:universal
 npm run lint
 ```
 
-## macOS universal packaging
+## Build a macOS release
 
-- `npm run build:mac:universal` bumps the current app patch version, syncs `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`, then builds an unsigned universal macOS `.app` and `.dmg`.
-- Final artifacts are copied to `build/macos-universal/<version>/`, and older versioned outputs are pruned so only the latest build remains.
-- The script installs the `x86_64-apple-darwin` Rust target automatically if it is missing.
+`npm run build:mac:universal` runs `build.sh`, bumps the patch version, syncs the version across the app metadata, builds a universal macOS app, and copies the final artifacts into `build/macos-universal/<version>/`.
+
+The script keeps the newest versioned output and removes older build directories so the build folder stays tidy.
+
+## Technology stack
+
+- React 19
+- TypeScript
+- Vite
+- Tauri 2
+- Rust
+- Excalidraw
+- Tailwind CSS 4
+- shadcn/ui and related component primitives
+- Sonner for toast notifications
+
+## Project layout
+
+| Path | Purpose |
+| --- | --- |
+| `src/features/workspace/` | Main workspace shell, editor, autosave, and session logic |
+| `src-tauri/` | Tauri backend, capabilities, and native application configuration |
+| `public/` | Public assets, including the project logo and Excalidraw assets |
+| `build.sh` | macOS universal packaging script |
+| `build/macos-universal/` | Versioned release artifacts generated by the build script |
+
+## Roadmap
+
+- Deeper file-system integration for richer local workflows.
+- More native desktop polish and permission refinement.
+- Continued UI and workspace ergonomics improvements.
 
 ## Notes
 
 - The old Node/Express/Mongo template backend has been removed.
-- The current milestone is the embedded editor canvas; local file dialogs, persistence, and export are next.
+- This project is optimized for local-first diagramming, not cloud syncing.
